@@ -1,6 +1,8 @@
 #include <TimerFreeTone.h>
 #include <NewPing.h>
 
+#define MAX_DISTANCE 200
+
 // Define which pins each of our sensors and actuators are connected to
 #define PIN_PING_TRIGGER_RIGHT 3
 #define PIN_PING_ECHO_RIGHT 4
@@ -9,9 +11,17 @@
 #define PIN_LED 8
 #define PIN_SERVO_LEFT 9
 #define PIN_SERVO_RIGHT 10
-#define PIN_SPEAKER 11
+#define PIN_BUZZER 11
 #define PIN_PHOTO A0
 
+bool wakeup_from_sensors;
+unsigned long time_sleeping, next_ping_at;
+int current_distance_l, current_distance_r;
+
+#define PING_SAMPLES 5
+
+#define SNORE_DELAY_SECS 15
+const int SNORE_DELAY_MS = SNORE_DELAY_SECS * 1000;
 
 // Imported from https://github.com/raygeeknyc/photovore/blob/master/photovore.ino
 
@@ -117,6 +127,27 @@ void callibrateSensors() {
   sensor_normalization_delta = min_delta;
 }
 
+void drive(int direction) {
+  recordDirection(direction);
+  switch (direction) {
+    case DIR_LEFT:
+      analogWrite(servoLPin, SERVO_L_STOP);
+      analogWrite(servoRPin, SERVO_R_FWD);
+      break;
+    case DIR_RIGHT:
+      analogWrite(servoLPin, SERVO_L_FWD);
+      analogWrite(servoRPin, SERVO_R_STOP);
+      break;
+    case DIR_FWD:
+      analogWrite(servoLPin, SERVO_L_FWD);
+      analogWrite(servoRPin, SERVO_R_FWD);
+      break;
+    case DIR_STOP:
+      analogWrite(servoLPin, SERVO_L_STOP);
+      analogWrite(servoRPin, SERVO_R_STOP);
+      break;
+  }
+}
 void readSensors() {
   /***
   The multiple reads and delay are recommended to allow the shared ADC to properly
@@ -141,44 +172,9 @@ void readSensors() {
   s_change_pct = (float)abs(s_delta) / s_max * 100;
 }
 
-void loop() {  
-  readSensors();
-
-  if ((abs(s_delta) > SENSOR_DELTA_THRESHOLD) && (s_change_pct > SENSOR_DELTA_THRESHOLD_PCT)) {
-    drive((sl < sr)? DIR_RIGHT:DIR_LEFT);
-  } else {
-    if (s_max < (s_highest - HIGHEST_THRESHOLD)) {
-      drive(DIR_FWD);
-    } else {
-      drive(DIR_STOP);
-      if (last_dir == DIR_FWD) {
-        burp();
-      }
-    }
-  }
-  s_highest = max(s_max, s_highest);
-}
-
-void drive(int direction) {
-  recordDirection(direction);
-  switch (direction) {
-    case DIR_LEFT:
-      analogWrite(servoLPin, SERVO_L_STOP);
-      analogWrite(servoRPin, SERVO_R_FWD);
-      break;
-    case DIR_RIGHT:
-      analogWrite(servoLPin, SERVO_L_FWD);
-      analogWrite(servoRPin, SERVO_R_STOP);
-      break;
-    case DIR_FWD:
-      analogWrite(servoLPin, SERVO_L_FWD);
-      analogWrite(servoRPin, SERVO_R_FWD);
-      break;
-    case DIR_STOP:
-      analogWrite(servoLPin, SERVO_L_STOP);
-      analogWrite(servoRPin, SERVO_R_STOP);
-      break;
-  }
+/* Return true if we are currently sleeping, false if we're awake */
+bool isSleeping() {
+  return false;
 }
 
 void spin(int direction) {
@@ -197,6 +193,39 @@ void spin(int direction) {
       analogWrite(servoRPin, SERVO_R_STOP);
       break;
   }
+}
+
+/* Take the current step in moving about */
+void roam() {
+}
+
+/* Pulse the LED in sleep mode */
+void breathe() {
+}
+
+/* Wake up, set flag, maybe make a waking noise or flash the LED */
+void awaken() {
+}
+
+/* Make a sleeping sound in sleep mode */
+void snore() {
+}
+
+void loop() {  
+ readSensors();
+ if (!isSleeping) {
+  roam();
+ }
+ if (isSleeping()) {
+  breathe();
+  if (wakeup_from_sensors) {
+    awaken();
+  } else {
+    if (time_sleeping > SNORE_DELAY_MS) {
+      snore();
+    }
+  }
+ }
 }
 
 // The sound producing function for chips without tone() support
@@ -219,8 +248,6 @@ void burp() {
   beep(speakerPin, 250, 75);
 }
 
-
-
 // Copied from https://github.com/raygeeknyc/icyou/blob/master/icyou.ino
 
 // Melody (liberated from the toneMelody Arduino example sketch by Tom Igoe).
@@ -234,17 +261,16 @@ void playTune() {
   }
 }
 
-
-int getPing() {
+int getLeftPing() {
  if (next_ping_at > millis()) {
    #ifdef _DEBUG
    Serial.print("Reusing old distance: ");
    Serial.println(current_distance);
    #endif
-   return current_distance;
+   return current_distance_l;
  }
-  current_distance = getPingSensorReading();
-  return current_distance;
+  current_distance_l = getPingSensorReading(sonarL);
+  return current_distance_l;
 }
 
 int getPingSensorReading(NewPing sonar) {
@@ -258,3 +284,4 @@ int getPingSensorReading(NewPing sonar) {
   Serial.println(cm);
 #endif 
  return cm;
+}
