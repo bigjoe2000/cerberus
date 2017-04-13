@@ -1,4 +1,3 @@
-#include <TimerFreeTone.h>
 #include <NewPing.h>
 
 #define MAX_DISTANCE 200
@@ -148,6 +147,7 @@ void drive(int direction) {
       break;
   }
 }
+
 void readSensors() {
   /***
   The multiple reads and delay are recommended to allow the shared ADC to properly
@@ -173,7 +173,7 @@ void readSensors() {
 }
 
 /* Return true if we are currently sleeping, false if we're awake */
-bool isSleeping() {
+bool isSleeping() {  // raygeeknyc@
   return false;
 }
 
@@ -213,7 +213,7 @@ void snore() {
 
 void loop() {  
  readSensors();
- if (!isSleeping) {
+ if (!isSleeping()) {  // raygeeknyc@
   roam();
  }
  if (isSleeping()) {
@@ -256,7 +256,7 @@ int duration[] = { 250, 125, 125, 250, 250, 250, 250, 250 };
 
 void playTune() {
    for (int thisNote = 0; thisNote < 8; thisNote++) { // Loop through the notes in the array.
-    TimerFreeTone(PIN_BUZZER, melody[thisNote], duration[thisNote]); // Play melody[thisNote] for duration[thisNote].
+    tone(PIN_BUZZER, melody[thisNote], duration[thisNote]); // Play melody[thisNote] for duration[thisNote].
     delay(50); // Short delay between notes.
   }
 }
