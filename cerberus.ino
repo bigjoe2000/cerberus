@@ -14,8 +14,8 @@
 #define PIN_PHOTO A0
 
 bool wakeup_from_sensors;
-unsigned long time_sleeping, next_ping_at;
-int current_distance_l, current_distance_r;
+unsigned long time_sleeping, next_ping_at, sleep_until, shine_until;
+int current_distance_l, current_distance_r, shine_brightness;
 
 #define PING_SAMPLES 5
 
@@ -62,6 +62,7 @@ const int SNORE_DELAY_MS = SNORE_DELAY_SECS * 1000;
 #define DIR_RIGHT 1
 #define DIR_LEFT 2
 #define DIR_FWD 3
+#define LED_FLASH_DURATION_MS 500
 
 NewPing sonarL(PIN_PING_TRIGGER_LEFT, PIN_PING_ECHO_LEFT, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
 NewPing sonarR(PIN_PING_TRIGGER_RIGHT, PIN_PING_ECHO_RIGHT, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
@@ -73,6 +74,9 @@ int current_dir, last_dir;
 int sensor_normalization_delta;
 
 void setup() {
+  shine_until = 0L;
+  sleep_until = 0L;
+  shine_brightness = 0;
   pinMode(servoLPin, OUTPUT);
   pinMode(servoRPin, OUTPUT);
   pinMode(speakerPin, OUTPUT);
@@ -173,8 +177,12 @@ void readSensors() {
 }
 
 /* Return true if we are currently sleeping, false if we're awake */
-bool isSleeping() {  // raygeeknyc@
-  return false;
+bool isSleeping() {
+  return (sleep_until && sleep_until < millis());
+}
+
+void sleep(const unsigned sleep_duration_secs) {
+  sleep_until = millis() + (sleep_duration_secs * 1000);
 }
 
 void spin(int direction) {
@@ -205,8 +213,27 @@ void breathe() {
 
 /* Wake up, set flag, maybe make a waking noise or flash the LED */
 void awaken() {  // raygeeknyc@
+  sleep_until = 0l;
+  flashLed();
+  burp();
 }
 
+bool isShining() {
+  return (shine_until && shine_until < millis());
+}
+
+void flashLed() {
+  shine_brightness = 255;
+  shine_until = millis() + LED_FLASH_DURATION_MS;
+}
+
+void updateLed() {
+  if (isShining()) {
+    analogWrite(PIN_LED, shine_brightness);
+  } else {
+    analogWrite(PIN_LED, 0);
+  }
+}
 /* Make a sleeping sound in sleep mode */
 void snore() {
 }
