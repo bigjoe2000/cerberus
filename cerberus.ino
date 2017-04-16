@@ -208,7 +208,7 @@ void roam() {
 }
 
 /* Pulse the LED in sleep mode */
-void breathe() {
+void breathe() {  // raygeeknyc@
 }
 
 /* Wake up, set flag, maybe make a waking noise or flash the LED */
@@ -235,7 +235,7 @@ void updateLed() {
   }
 }
 /* Make a sleeping sound in sleep mode */
-void snore() {
+void snore() {  // raygeeknyc@
 }
 
 void loop() {  
@@ -244,12 +244,12 @@ void loop() {
   roam();
  }
  if (isSleeping()) {
-  breathe();
+  breathe();  // raygeeknyc()
   if (wakeup_from_sensors) {
     awaken();  // raygeeknyc@
   } else {
     if (time_sleeping > SNORE_DELAY_MS) {
-      snore();
+      snore();  // raygeeknyc@
     }
   }
  }
