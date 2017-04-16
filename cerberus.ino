@@ -204,7 +204,7 @@ void breathe() {
 }
 
 /* Wake up, set flag, maybe make a waking noise or flash the LED */
-void awaken() {
+void awaken() {  // raygeeknyc@
 }
 
 /* Make a sleeping sound in sleep mode */
@@ -219,7 +219,7 @@ void loop() {
  if (isSleeping()) {
   breathe();
   if (wakeup_from_sensors) {
-    awaken();
+    awaken();  // raygeeknyc@
   } else {
     if (time_sleeping > SNORE_DELAY_MS) {
       snore();
