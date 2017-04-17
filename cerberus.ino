@@ -183,7 +183,7 @@ void readSensors() {
 }
 
 /* Return true if we are currently sleeping, false if we're awake */
-bool isSleeping() {
+bool isSleeping() {  // raygeeknyc@
   return (sleep_until && sleep_until < millis());
 }
 
@@ -247,8 +247,17 @@ void updateLed() {
   analogWrite(PIN_LED, shine_brightness);
 }
 
-/* Make a sleeping sound in sleep mode */
+/* Make a sleeping sound in sleep mode.
+  Since this function blocks, update the breathing state LED */
 void snore() {  // raygeeknyc@
+  for (int i=0; i<6; i++) {
+    beep(speakerPin, 125, 75);
+    breathe();
+    updateLed();
+    beep(speakerPin, 75, 75);
+    breathe();
+    updateLed();
+  }
 }
 
 // The sound producing function for chips without tone() support
@@ -279,7 +288,7 @@ int duration[] = { 250, 125, 125, 250, 250, 250, 250, 250 };
 
 void playTune() {
    for (int thisNote = 0; thisNote < 8; thisNote++) { // Loop through the notes in the array.
-    tone(PIN_BUZZER, melody[thisNote], duration[thisNote]); // Play melody[thisNote] for duration[thisNote].
+    beep(PIN_BUZZER, melody[thisNote], duration[thisNote]); // Play melody[thisNote] for duration[thisNote].
     delay(50); // Short delay between notes.
   }
 }
@@ -311,8 +320,8 @@ int getPingSensorReading(NewPing sonar) {
 
 void loop() {  
  readSensors();
- updateLed();
- if (!isSleeping()) {  // raygeeknyc@
+ updateLed();  // raygeeknyc@ : done
+ if (!isSleeping()) {  // raygeeknyc@ : done
   roam();
  }
  if (isSleeping()) {
@@ -321,6 +330,7 @@ void loop() {
     awaken();  // raygeeknyc@ : done  
   } else {
     if (time_sleeping > SNORE_DELAY_MS) {
+      snore();  // raygeeknyc@ : done
     }
   }
  }
