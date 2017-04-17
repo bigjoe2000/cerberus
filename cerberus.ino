@@ -11,11 +11,11 @@
 #define PIN_SERVO_LEFT 9
 #define PIN_SERVO_RIGHT 10
 #define PIN_BUZZER 11
-#define PIN_PHOTO A0
+#define PIN_CDS A0
 
 bool wakeup_from_sensors;
 unsigned long time_sleeping, next_ping_at, sleep_until, shine_until, next_breathe_at;
-int current_distance_l, current_distance_r, shine_brightness;
+int current_distance_l, current_distance_r, shine_brightness, light_level, light_delta;
 
 #define PING_SAMPLES 5
 #define PING_SAMPLE_DELAY_MS 50
@@ -30,13 +30,12 @@ int breathe_dir;
 
 // Imported from https://github.com/raygeeknyc/photovore/blob/master/photovore.ino
 
-#define sensorLPin PIN_PHOTO
 #define sensorRPin 3
 #define speakerPin 4
 #define servoLPin PIN_SERVO_LEFT
 #define servoRPin PIN_SERVO_RIGHT
 
-// Define these based on your servos and controller, the values to cause your servos 
+// Define these based on your servos and controller, the values to cause your servos
 // to spin in opposite directions at approx the same speed.
 #define CW 30
 #define CCW 10
@@ -60,7 +59,7 @@ int breathe_dir;
 #define MAX_SENSOR_READING 1023  // Used to seed sensor pair normalization
 
 // How long to spin while callibrating the sensor pair
-#define DUR_CALLIBRATION 1000
+#define CALLIBRATION_DUR_MS 1000
 
 // How long to pause between steps while spinning to normalize the sensor pair
 #define SPIN_STEP_DELAY_MS 15
@@ -73,16 +72,15 @@ int breathe_dir;
 NewPing sonarL(PIN_PING_TRIGGER_LEFT, PIN_PING_ECHO_LEFT, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
 NewPing sonarR(PIN_PING_TRIGGER_RIGHT, PIN_PING_ECHO_RIGHT, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
 
-int sr, sl;
-int s_max, s_highest;
-int s_delta, s_change_pct;
 int current_dir, last_dir;
 int sensor_normalization_delta;
 
 void setup() {
+  next_breathe_at = 0L;
   breathe_dir = 1;
   shine_until = 0L;
   sleep_until = 0L;
+  next_ping_at = 0L;
   shine_brightness = 0;
   pinMode(servoLPin, OUTPUT);
   pinMode(servoRPin, OUTPUT);
@@ -90,7 +88,6 @@ void setup() {
   analogWrite(servoLPin, SERVO_L_STOP);
   analogWrite(servoRPin, SERVO_R_STOP);
   sensor_normalization_delta = 0;
-  callibrateSensors();
 }
 
 void recordDirection(int dir) {
@@ -100,41 +97,19 @@ void recordDirection(int dir) {
 
 int smooth(int array[], int len) {
   /**
-  Return the average of the array without the highest and lowest values.
+    Return the average of the array without the highest and lowest values.
   **/
   int low = MAX_SENSOR_READING;
   int high = -1;
   int total = 0;
-  for (int s=0; s< len; s++) {
+  for (int s = 0; s < len; s++) {
     total += array[s];
     low = min(array[s], low);
     high = max(array[s], high);
   }
   total -= low;
   total -= high;
-  return total / (len -2);
-}
-
-void callibrateSensors() {
-  /* Find the closest concurrent values of our two sensors while spinning in
-     a random direction and use that as a sensor normalizing value.
-   **/
-  int min_delta = MAX_SENSOR_READING;
-  float dir = random(3);
-  unsigned long callibration_until = millis() + DUR_CALLIBRATION;
-  int spin_dir = (dir > 1.0)?DIR_LEFT:DIR_RIGHT;
-  while (millis() < callibration_until) {
-    spin(spin_dir);
-    delay(SPIN_STEP_DELAY_MS);
-    spin(DIR_STOP);
-    delay(SPIN_STEP_DELAY_MS);
-    readSensors();
-    if (abs(s_delta) < abs(min_delta)) {
-      min_delta = s_delta;
-    }
-  }
-  drive(DIR_STOP);
-  sensor_normalization_delta = min_delta;
+  return total / (len - 2);
 }
 
 void drive(int direction) {
@@ -159,28 +134,33 @@ void drive(int direction) {
   }
 }
 
-void readSensors() {
-  /***
-  The multiple reads and delay are recommended to allow the shared ADC to properly
-  read multiple pins in succession.
-  ***/
+void readSensors() {  // raygeeknyc@
+  // Don't read the ping sensors too often
+  if (next_ping_at > millis()) {
+    #ifdef _DEBUG
+    Serial.print("Reuse old  distances. ");
+    Serial.print("right: ");
+    Serial.print(current_distance_r);
+    Serial.print("left: ");
+    Serial.println(current_distance_l);
+    #endif
+  } else {
+    current_distance_l = getLeftPing();
+    current_distance_r = getRightPing();
+    next_ping_at = millis() + PING_SAMPLE_DELAY_MS;
+  }
+  int l = getLightLevel();
+  light_delta = light_level - l;
+  light_level = l;
+}
+
+int getLightLevel() {
+   // Return the median reading from the light sensor
   int samples[SENSOR_SAMPLES];
-  
-  analogRead(sensorLPin);delay(10);  
-  for (int s=0; s<SENSOR_SAMPLES; s++) {
-    samples[s] = analogRead(sensorLPin);
+  for (int sample = 0; sample < SENSOR_SAMPLES; sample++) {
+    samples[sample] = analogRead(PIN_CDS);
   }
-  sl = smooth(samples, SENSOR_SAMPLES);
-
-  analogRead(sensorRPin);delay(10);
-  for (int s=0; s<SENSOR_SAMPLES; s++) {
-    samples[s] = analogRead(sensorRPin);
-  }
-  sr = smooth(samples, SENSOR_SAMPLES);
-
-  s_max = max(sl,sr);
-  s_delta = (sl - sensor_normalization_delta) - sr;
-  s_change_pct = (float)abs(s_delta) / s_max * 100;
+  return smooth(samples, SENSOR_SAMPLES);
 }
 
 /* Return true if we are currently sleeping, false if we're awake */
@@ -220,7 +200,7 @@ void breathe() {  // raygeeknyc@
     next_breathe_at = millis() + BREATHE_STEP_DUR_MS;
   }
   if (next_breathe_at < millis()) {
-    shine_brightness += BREATHE_STEP * ((breathe_dir > 0)?1:-1);
+    shine_brightness += BREATHE_STEP * ((breathe_dir > 0) ? 1 : -1);
     if ((shine_brightness <= BREATHE_MIN) || (shine_brightness >= BREATHE_MAX)) {
       breathe_dir *= -1;
     }
@@ -251,7 +231,7 @@ void updateLed() {
 /* Make a sleeping sound in sleep mode.
   Since this function blocks, update the breathing state LED */
 void snore() {  // raygeeknyc@
-  for (int i=0; i<6; i++) {
+  for (int i = 0; i < 6; i++) {
     beep(speakerPin, 125, 75);
     breathe();
     updateLed();
@@ -264,15 +244,15 @@ void snore() {  // raygeeknyc@
 // The sound producing function for chips without tone() support
 void beep (unsigned char pin, int frequencyInHertz, long timeInMilliseconds) {
   // from http://web.media.mit.edu/~leah/LilyPad/07_sound_code.html
-  int x;	 
-  long delayAmount = (long)(1000000/frequencyInHertz);
-  long loopTime = (long)((timeInMilliseconds*1000)/(delayAmount*2));
-  for (x=0;x<loopTime;x++) {	 
-    digitalWrite(pin,HIGH);
+  int x;
+  long delayAmount = (long)(1000000 / frequencyInHertz);
+  long loopTime = (long)((timeInMilliseconds * 1000) / (delayAmount * 2));
+  for (x = 0; x < loopTime; x++) {
+    digitalWrite(pin, HIGH);
     delayMicroseconds(delayAmount);
-    digitalWrite(pin,LOW);
+    digitalWrite(pin, LOW);
     delayMicroseconds(delayAmount);
-  }	 
+  }
 }
 
 // Emit a fairly rude noise
@@ -286,65 +266,47 @@ int melody[] = { 262, 196, 196, 220, 196, 0, 247, 262 };
 int duration[] = { 250, 125, 125, 250, 250, 250, 250, 250 };
 
 void playTune() {
-   for (int thisNote = 0; thisNote < 8; thisNote++) { // Loop through the notes in the array.
+  for (int thisNote = 0; thisNote < 8; thisNote++) { // Loop through the notes in the array.
     beep(PIN_BUZZER, melody[thisNote], duration[thisNote]); // Play melody[thisNote] for duration[thisNote].
     delay(50); // Short delay between notes.
   }
 }
 
 int getLeftPing() {
- if (next_ping_at > millis()) {
-   #ifdef _DEBUG
-   Serial.print("Reusing old left distance: ");
-   Serial.println(current_distance_l);
-   #endif
-   return current_distance_l;
- }
-  current_distance_l = getPingSensorReading(sonarL);
-  next_ping_at = millis() + PING_SAMPLE_DELAY_MS;
-  return current_distance_l;
+  return getPingSensorReading(sonarL);
 }
 
 int getRightPing() {
- if (next_ping_at > millis()) {
-   #ifdef _DEBUG
-   Serial.print("Reusing old right distance: ");
-   Serial.println(current_distance_r);
-   #endif
-   return current_distance_r;
- }
-  current_distance_r = getPingSensorReading(sonarR);
-  next_ping_at = millis() + PING_SAMPLE_DELAY_MS;
-  return current_distance_l;
+  return getPingSensorReading(sonarR);
 }
 
 int getPingSensorReading(NewPing sonar) {
- int cm = 0;
- while (cm==0) {
-  int echoTime = sonar.ping_median(PING_SAMPLES);
-  cm = sonar.convert_cm(echoTime);
- }
+  int cm = 0;
+  while (cm == 0) {
+    int echoTime = sonar.ping_median(PING_SAMPLES);
+    cm = sonar.convert_cm(echoTime);
+  }
 #ifdef _DEBUG
   Serial.print("Distance ");
   Serial.println(cm);
-#endif 
- return cm;
+#endif
+  return cm;
 }
 
-void loop() {  
- readSensors();  // raygeeknyc@
- updateLed();  // raygeeknyc@ : done
- if (!isSleeping()) {  // raygeeknyc@ : done
-  roam();
- }
- if (isSleeping()) {
-  breathe();  // raygeeknyc@ : done
-  if (wakeup_from_sensors) {
-    awaken();  // raygeeknyc@ : done  
-  } else {
-    if (time_sleeping > SNORE_DELAY_MS) {
-      snore();  // raygeeknyc@ : done
+void loop() {
+  readSensors();  // raygeeknyc@
+  updateLed();  // raygeeknyc@ : done
+  if (!isSleeping()) {  // raygeeknyc@ : done
+    roam();
+  }
+  if (isSleeping()) {
+    breathe();  // raygeeknyc@ : done
+    if (wakeup_from_sensors) {
+      awaken();  // raygeeknyc@ : done
+    } else {
+      if (time_sleeping > SNORE_DELAY_MS) {
+        snore();  // raygeeknyc@ : done
+      }
     }
   }
- }
 }
