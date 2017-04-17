@@ -18,6 +18,7 @@ unsigned long time_sleeping, next_ping_at, sleep_until, shine_until, next_breath
 int current_distance_l, current_distance_r, shine_brightness;
 
 #define PING_SAMPLES 5
+#define PING_SAMPLE_DELAY_MS 50
 
 #define SNORE_DELAY_SECS 15
 const int SNORE_DELAY_MS = SNORE_DELAY_SECS * 1000;
@@ -280,8 +281,6 @@ void burp() {
   beep(speakerPin, 250, 75);
 }
 
-// Copied from https://github.com/raygeeknyc/icyou/blob/master/icyou.ino
-
 // Melody (liberated from the toneMelody Arduino example sketch by Tom Igoe).
 int melody[] = { 262, 196, 196, 220, 196, 0, 247, 262 };
 int duration[] = { 250, 125, 125, 250, 250, 250, 250, 250 };
@@ -296,12 +295,26 @@ void playTune() {
 int getLeftPing() {
  if (next_ping_at > millis()) {
    #ifdef _DEBUG
-   Serial.print("Reusing old distance: ");
-   Serial.println(current_distance);
+   Serial.print("Reusing old left distance: ");
+   Serial.println(current_distance_l);
    #endif
    return current_distance_l;
  }
   current_distance_l = getPingSensorReading(sonarL);
+  next_ping_at = millis() + PING_SAMPLE_DELAY_MS;
+  return current_distance_l;
+}
+
+int getRightPing() {
+ if (next_ping_at > millis()) {
+   #ifdef _DEBUG
+   Serial.print("Reusing old right distance: ");
+   Serial.println(current_distance_r);
+   #endif
+   return current_distance_r;
+ }
+  current_distance_r = getPingSensorReading(sonarR);
+  next_ping_at = millis() + PING_SAMPLE_DELAY_MS;
   return current_distance_l;
 }
 
@@ -319,7 +332,7 @@ int getPingSensorReading(NewPing sonar) {
 }
 
 void loop() {  
- readSensors();
+ readSensors();  // raygeeknyc@
  updateLed();  // raygeeknyc@ : done
  if (!isSleeping()) {  // raygeeknyc@ : done
   roam();
