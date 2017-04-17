@@ -14,13 +14,18 @@
 #define PIN_PHOTO A0
 
 bool wakeup_from_sensors;
-unsigned long time_sleeping, next_ping_at, sleep_until, shine_until;
+unsigned long time_sleeping, next_ping_at, sleep_until, shine_until, next_breathe_at;
 int current_distance_l, current_distance_r, shine_brightness;
 
 #define PING_SAMPLES 5
 
 #define SNORE_DELAY_SECS 15
 const int SNORE_DELAY_MS = SNORE_DELAY_SECS * 1000;
+#define BREATHE_MIN 30
+#define BREATHE_MAX 150
+#define BREATHE_STEP 10
+#define BREATHE_STEP_DUR_MS 50
+int breathe_dir;
 
 // Imported from https://github.com/raygeeknyc/photovore/blob/master/photovore.ino
 
@@ -74,6 +79,7 @@ int current_dir, last_dir;
 int sensor_normalization_delta;
 
 void setup() {
+  breathe_dir = 1;
   shine_until = 0L;
   sleep_until = 0L;
   shine_brightness = 0;
@@ -209,11 +215,21 @@ void roam() {
 
 /* Pulse the LED in sleep mode */
 void breathe() {  // raygeeknyc@
+  if (!next_breathe_at || (next_breathe_at >= millis())) {
+    next_breathe_at = millis() + BREATHE_STEP_DUR_MS;
+  }
+  if (next_breathe_at < millis()) {
+    shine_brightness += BREATHE_STEP * ((breathe_dir > 0)?1:-1);
+    if ((shine_brightness <= BREATHE_MIN) || (shine_brightness >= BREATHE_MAX)) {
+      breathe_dir *= -1;
+    }
+  }
 }
 
 /* Wake up, set flag, maybe make a waking noise or flash the LED */
 void awaken() {  // raygeeknyc@
   sleep_until = 0l;
+  next_breathe_at = 0;
   flashLed();
   burp();
 }
@@ -228,31 +244,11 @@ void flashLed() {
 }
 
 void updateLed() {
-  if (isShining()) {
-    analogWrite(PIN_LED, shine_brightness);
-  } else {
-    analogWrite(PIN_LED, 0);
-  }
-}
-/* Make a sleeping sound in sleep mode */
-void snore() {  // raygeeknyc@
+  analogWrite(PIN_LED, shine_brightness);
 }
 
-void loop() {  
- readSensors();
- if (!isSleeping()) {  // raygeeknyc@
-  roam();
- }
- if (isSleeping()) {
-  breathe();  // raygeeknyc()
-  if (wakeup_from_sensors) {
-    awaken();  // raygeeknyc@
-  } else {
-    if (time_sleeping > SNORE_DELAY_MS) {
-      snore();  // raygeeknyc@
-    }
-  }
- }
+/* Make a sleeping sound in sleep mode */
+void snore() {  // raygeeknyc@
 }
 
 // The sound producing function for chips without tone() support
@@ -311,4 +307,21 @@ int getPingSensorReading(NewPing sonar) {
   Serial.println(cm);
 #endif 
  return cm;
+}
+
+void loop() {  
+ readSensors();
+ updateLed();
+ if (!isSleeping()) {  // raygeeknyc@
+  roam();
+ }
+ if (isSleeping()) {
+  breathe();  // raygeeknyc@ : done
+  if (wakeup_from_sensors) {
+    awaken();  // raygeeknyc@ : done  
+  } else {
+    if (time_sleeping > SNORE_DELAY_MS) {
+    }
+  }
+ }
 }
