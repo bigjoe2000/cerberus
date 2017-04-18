@@ -297,7 +297,7 @@ void loop() {
   readSensors();  // raygeeknyc@
   updateLed();  // raygeeknyc@ : done
   if (!isSleeping()) {  // raygeeknyc@ : done
-    roam();
+    roam();  // raygeeknyc@
   }
   if (isSleeping()) {
     breathe();  // raygeeknyc@ : done
