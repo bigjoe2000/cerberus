@@ -16,10 +16,13 @@
 bool wakeup_from_sensors;
 unsigned long time_sleeping, next_ping_at, sleep_until, shine_until, next_breathe_at;
 int current_distance_l, current_distance_r, shine_brightness, light_level, light_delta;
+int weave_phase, weave_dir;
+int weave_bias[] = {-1, 0, 1};
+#define TURN_DUR_MS 400
 
 #define PING_SAMPLES 5
 #define PING_SAMPLE_DELAY_MS 50
-
+#define CLOSE_PROXIMITY_THRESHOLD 7
 #define SNORE_DELAY_SECS 15
 const int SNORE_DELAY_MS = SNORE_DELAY_SECS * 1000;
 #define BREATHE_MIN 30
@@ -38,7 +41,12 @@ int breathe_dir;
 // Define these based on your servos and controller, the values to cause your servos
 // to spin in opposite directions at approx the same speed.
 #define CW 30
+#define CW_SLOW 20
 #define CCW 10
+#define CCW_SLOW 5
+
+#define SERVO_L_FWDSLOW CW_SLOW
+#define SERVO_R_FWDSLOW CCW_SLOW
 
 #define SERVO_L_FWD CW
 #define SERVO_R_FWD CCW
@@ -68,6 +76,8 @@ int breathe_dir;
 #define DIR_LEFT 2
 #define DIR_FWD 3
 #define LED_FLASH_DURATION_MS 500
+#define WITHDRAW_DUR_MS 700
+#define TURN_DUR_MS 200
 
 NewPing sonarL(PIN_PING_TRIGGER_LEFT, PIN_PING_ECHO_LEFT, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
 NewPing sonarR(PIN_PING_TRIGGER_RIGHT, PIN_PING_ECHO_RIGHT, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
@@ -76,6 +86,8 @@ int current_dir, last_dir;
 int sensor_normalization_delta;
 
 void setup() {
+  weave_phase = 0;
+  weave_dir = 1;
   next_breathe_at = 0L;
   breathe_dir = 1;
   shine_until = 0L;
@@ -110,28 +122,6 @@ int smooth(int array[], int len) {
   total -= low;
   total -= high;
   return total / (len - 2);
-}
-
-void drive(int direction) {
-  recordDirection(direction);
-  switch (direction) {
-    case DIR_LEFT:
-      analogWrite(servoLPin, SERVO_L_STOP);
-      analogWrite(servoRPin, SERVO_R_FWD);
-      break;
-    case DIR_RIGHT:
-      analogWrite(servoLPin, SERVO_L_FWD);
-      analogWrite(servoRPin, SERVO_R_STOP);
-      break;
-    case DIR_FWD:
-      analogWrite(servoLPin, SERVO_L_FWD);
-      analogWrite(servoRPin, SERVO_R_FWD);
-      break;
-    case DIR_STOP:
-      analogWrite(servoLPin, SERVO_L_STOP);
-      analogWrite(servoRPin, SERVO_R_STOP);
-      break;
-  }
 }
 
 void readSensors() {  // raygeeknyc@
@@ -190,8 +180,92 @@ void spin(int direction) {
   }
 }
 
+void steerTowards(int bias) {
+  if (bias==-1) {
+    fwd(DIR_RIGHT);
+    slow(DIR_LEFT);
+  } else if (bias==1) {
+    fwd(DIR_LEFT);
+    slow(DIR_RIGHT);
+  } else {
+    slow(DIR_LEFT);
+    slow(DIR_RIGHT);
+  }
+}
+
+void weave() {
+  weave_phase += weave_dir;
+  if ((weave_phase == 0) || (weave_phase == (sizeof(weave_bias) / sizeof(int)-1))) {
+    weave_dir *= -1;
+  }
+  steerTowards(weave_bias[weave_phase]);
+}
+
+void withdraw() {
+  playTune();
+  reverse(DIR_LEFT);
+  reverse(DIR_RIGHT);
+  delay(WITHDRAW_DUR_MS);
+  turnFrom(DIR_LEFT);
+  delay(TURN_DUR_MS);
+  stop(DIR_LEFT);
+  stop(DIR_RIGHT);
+}
+
+void slow(int side) {
+  if (side == DIR_LEFT) {
+    analogWrite(servoLPin, SERVO_L_FWDSLOW);
+  } else {
+    analogWrite(servoRPin, SERVO_R_FWDSLOW);
+  }
+}
+
+void fwd(int side) {
+  if (side == DIR_LEFT) {
+    analogWrite(servoLPin, SERVO_L_FWD);
+  } else {
+    analogWrite(servoRPin, SERVO_R_FWD);
+  }
+}
+
+void reverse(int side) {
+  if (side == DIR_LEFT) {
+    analogWrite(servoLPin, SERVO_L_BWD);
+  } else {
+    analogWrite(servoRPin, SERVO_R_BWD);
+  }
+}
+
+void stop(int side) {
+  if (side == DIR_LEFT) {
+    analogWrite(servoLPin, SERVO_L_STOP);
+  } else {
+    analogWrite(servoRPin, SERVO_R_STOP);
+  }
+}
+
+void turnFrom(const int side) {
+  fwd(side);
+  reverse((side == DIR_LEFT)?DIR_RIGHT:DIR_LEFT);
+  delay(TURN_DUR_MS);
+  stop(DIR_LEFT);
+  stop(DIR_RIGHT);
+}
+
+bool isClose(const int distance) {
+  return distance <= CLOSE_PROXIMITY_THRESHOLD;
+}
+
 /* Take the current step in moving about */
-void roam() {
+void roam() {  // raygeeknyc@
+  if (!isClose(current_distance_l) && !isClose(current_distance_r)) {
+    weave();
+  } else if (isClose(current_distance_l) && isClose(current_distance_r)) {
+    withdraw();
+  } else {
+    int closer_side = (current_distance_l  < current_distance_r)?DIR_LEFT:DIR_RIGHT;
+    turnFrom(closer_side);
+  }
 }
 
 /* Pulse the LED in sleep mode */
@@ -293,15 +367,19 @@ int getPingSensorReading(NewPing sonar) {
   return cm;
 }
 
+bool wakeup() {
+  return wakeup_from_sensors;
+}
+
 void loop() {
   readSensors();  // raygeeknyc@
   updateLed();  // raygeeknyc@ : done
   if (!isSleeping()) {  // raygeeknyc@ : done
-    roam();  // raygeeknyc@
+    roam();  // raygeeknyc@ : done
   }
   if (isSleeping()) {
     breathe();  // raygeeknyc@ : done
-    if (wakeup_from_sensors) {
+    if (wakeup()) {
       awaken();  // raygeeknyc@ : done
     } else {
       if (time_sleeping > SNORE_DELAY_MS) {
