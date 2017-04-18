@@ -14,10 +14,11 @@
 #define PIN_CDS A0
 
 bool wakeup_from_sensors;
-unsigned long time_sleeping, next_ping_at, sleep_until, shine_until, next_breathe_at;
-int current_distance_l, current_distance_r, shine_brightness, light_level, light_delta;
+unsigned long time_sleeping, next_ping_at, sleep_until, shine_until, next_breathe_at, last_sensor_activity_at, awake_since;
+int current_distance_l, current_distance_r, shine_brightness, light_level, light_delta,
+    prev_distance_l, prev_distance_r, ping_delta_l, ping_delta_r;
 int weave_phase, weave_dir;
-int weave_bias[] = {-1, 0, 1};
+int weave_bias[] = { -1, 0, 1};
 #define TURN_DUR_MS 400
 
 #define PING_SAMPLES 5
@@ -65,6 +66,9 @@ int breathe_dir;
 #define SENSOR_SAMPLES 5
 
 #define MAX_SENSOR_READING 1023  // Used to seed sensor pair normalization
+#define LIGHT_CHANGE_THRESHOLD 200
+#define PING_CHANGE_THRESHOLD_CM 3
+
 
 // How long to spin while callibrating the sensor pair
 #define CALLIBRATION_DUR_MS 1000
@@ -78,6 +82,10 @@ int breathe_dir;
 #define LED_FLASH_DURATION_MS 500
 #define WITHDRAW_DUR_MS 700
 #define TURN_DUR_MS 200
+#define INACTIVITY_SLEEP_SECS 15
+const int INACTIVITY_SLEEP_MS = INACTIVITY_SLEEP_SECS * 1000;
+#define ACTIVITY_TIME_TO_NAP_SECS 60
+const int ACTIVITY_TIME_TO_NAP_MS =  ACTIVITY_TIME_TO_NAP_SECS * 1000;
 
 NewPing sonarL(PIN_PING_TRIGGER_LEFT, PIN_PING_ECHO_LEFT, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
 NewPing sonarR(PIN_PING_TRIGGER_RIGHT, PIN_PING_ECHO_RIGHT, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
@@ -127,14 +135,18 @@ int smooth(int array[], int len) {
 void readSensors() {  // raygeeknyc@
   // Don't read the ping sensors too often
   if (next_ping_at > millis()) {
-    #ifdef _DEBUG
+#ifdef _DEBUG
     Serial.print("Reuse old  distances. ");
     Serial.print("right: ");
     Serial.print(current_distance_r);
     Serial.print("left: ");
     Serial.println(current_distance_l);
-    #endif
+#endif
   } else {
+    prev_distance_l = current_distance_l;
+    prev_distance_r = current_distance_r;
+    ping_delta_l = current_distance_l - prev_distance_l;
+    ping_delta_r = current_distance_r - prev_distance_r;
     current_distance_l = getLeftPing();
     current_distance_r = getRightPing();
     next_ping_at = millis() + PING_SAMPLE_DELAY_MS;
@@ -142,10 +154,15 @@ void readSensors() {  // raygeeknyc@
   int l = getLightLevel();
   light_delta = light_level - l;
   light_level = l;
+  if ((abs(light_delta) > LIGHT_CHANGE_THRESHOLD)
+      || (abs(ping_delta_l) > PING_CHANGE_THRESHOLD_CM)
+      || (abs(ping_delta_r) > PING_CHANGE_THRESHOLD_CM)) {
+    last_sensor_activity_at = millis();
+  }
 }
 
 int getLightLevel() {
-   // Return the median reading from the light sensor
+  // Return the median reading from the light sensor
   int samples[SENSOR_SAMPLES];
   for (int sample = 0; sample < SENSOR_SAMPLES; sample++) {
     samples[sample] = analogRead(PIN_CDS);
@@ -181,10 +198,10 @@ void spin(int direction) {
 }
 
 void steerTowards(int bias) {
-  if (bias==-1) {
+  if (bias == -1) {
     fwd(DIR_RIGHT);
     slow(DIR_LEFT);
-  } else if (bias==1) {
+  } else if (bias == 1) {
     fwd(DIR_LEFT);
     slow(DIR_RIGHT);
   } else {
@@ -195,7 +212,7 @@ void steerTowards(int bias) {
 
 void weave() {
   weave_phase += weave_dir;
-  if ((weave_phase == 0) || (weave_phase == (sizeof(weave_bias) / sizeof(int)-1))) {
+  if ((weave_phase == 0) || (weave_phase == (sizeof(weave_bias) / sizeof(int) - 1))) {
     weave_dir *= -1;
   }
   steerTowards(weave_bias[weave_phase]);
@@ -246,7 +263,7 @@ void stop(int side) {
 
 void turnFrom(const int side) {
   fwd(side);
-  reverse((side == DIR_LEFT)?DIR_RIGHT:DIR_LEFT);
+  reverse((side == DIR_LEFT) ? DIR_RIGHT : DIR_LEFT);
   delay(TURN_DUR_MS);
   stop(DIR_LEFT);
   stop(DIR_RIGHT);
@@ -263,7 +280,7 @@ void roam() {  // raygeeknyc@
   } else if (isClose(current_distance_l) && isClose(current_distance_r)) {
     withdraw();
   } else {
-    int closer_side = (current_distance_l  < current_distance_r)?DIR_LEFT:DIR_RIGHT;
+    int closer_side = (current_distance_l  < current_distance_r) ? DIR_LEFT : DIR_RIGHT;
     turnFrom(closer_side);
   }
 }
@@ -284,6 +301,7 @@ void breathe() {  // raygeeknyc@
 /* Wake up, set flag, maybe make a waking noise or flash the LED */
 void awaken() {  // raygeeknyc@
   sleep_until = 0l;
+  awake_since = millis();
   next_breathe_at = 0;
   flashLed();
   burp();
@@ -371,8 +389,18 @@ bool wakeup() {
   return wakeup_from_sensors;
 }
 
+bool checkToSleep() {
+  if ((millis() - last_sensor_activity_at) > INACTIVITY_SLEEP_MS) {
+    return true;
+  }
+  if ((millis() - awake_since) > ACTIVITY_TIME_TO_NAP_MS) {
+    return true;
+  }
+  return false;
+}
 void loop() {
   readSensors();  // raygeeknyc@
+  checkToSleep();
   updateLed();  // raygeeknyc@ : done
   if (!isSleeping()) {  // raygeeknyc@ : done
     roam();  // raygeeknyc@ : done
