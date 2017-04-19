@@ -5,8 +5,8 @@
 // Define which pins each of our sensors and actuators are connected to
 #define PIN_PING_TRIGGER_RIGHT 3
 #define PIN_PING_ECHO_RIGHT 4
-#define PIN_PING_TRIGGER_LEFT 5
-#define PIN_PING_ECHO_LEFT 6
+#define PIN_PING_TRIGGER_LEFT 12
+#define PIN_PING_ECHO_LEFT 13
 #define PIN_LED 8
 #define PIN_SERVO_LEFT 9
 #define PIN_SERVO_RIGHT 10
