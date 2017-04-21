@@ -81,7 +81,6 @@ int breathe_dir;
 #define DIR_FWD 3
 #define LED_FLASH_DURATION_MS 500
 #define WITHDRAW_DUR_MS 700
-#define TURN_DUR_MS 200
 #define INACTIVITY_SLEEP_SECS 15
 const int INACTIVITY_SLEEP_MS = INACTIVITY_SLEEP_SECS * 1000;
 #define ACTIVITY_TIME_TO_NAP_SECS 60
@@ -385,7 +384,7 @@ int getPingSensorReading(NewPing sonar) {
   return cm;
 }
 
-bool isTimeToWake() {
+bool hasBeenAwoken() {
   return wakeup_from_sensors;
 }
 
@@ -407,7 +406,7 @@ void loop() {
   }
   if (isSleeping()) {  // raygeeknyc@ : done
     breathe();  // raygeeknyc@ : done
-    if (isTimeToWake()) {  // raygeeknyc@
+    if (hasBeenAwoken()) {  // raygeeknyc@
       awaken();  // raygeeknyc@ : done
     } else {
       if (time_sleeping > SNORE_DELAY_MS) {
