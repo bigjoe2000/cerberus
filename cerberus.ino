@@ -385,11 +385,11 @@ int getPingSensorReading(NewPing sonar) {
   return cm;
 }
 
-bool wakeup() {
+bool isTimeToWake() {
   return wakeup_from_sensors;
 }
 
-bool checkToSleep() {
+bool checkAndSleep() {
   if ((millis() - last_sensor_activity_at) > INACTIVITY_SLEEP_MS) {
     return true;
   }
@@ -399,15 +399,15 @@ bool checkToSleep() {
   return false;
 }
 void loop() {
-  readSensors();  // raygeeknyc@
-  checkToSleep();
+  readSensors();  // raygeeknyc@ : done
+  checkAndSleep();  // raygeeknyc@ : done
   updateLed();  // raygeeknyc@ : done
   if (!isSleeping()) {  // raygeeknyc@ : done
     roam();  // raygeeknyc@ : done
   }
-  if (isSleeping()) {
+  if (isSleeping()) {  // raygeeknyc@ : done
     breathe();  // raygeeknyc@ : done
-    if (wakeup()) {
+    if (isTimeToWake()) {  // raygeeknyc@
       awaken();  // raygeeknyc@ : done
     } else {
       if (time_sleeping > SNORE_DELAY_MS) {
