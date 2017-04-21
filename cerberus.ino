@@ -1,4 +1,5 @@
 #include <NewPing.h>
+# Cerberus - a two headed robot dog
 
 #define MAX_DISTANCE 200
 
