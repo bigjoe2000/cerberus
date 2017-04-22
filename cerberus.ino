@@ -1,7 +1,10 @@
+// Cerberus - a two headed robot dog
+
+#include <Servo.h>
 #include <NewPing.h>
-# Cerberus - a two headed robot dog
 
 #define MAX_DISTANCE 200
+#define _NODEBUG
 
 // Define which pins each of our sensors and actuators are connected to
 #define PIN_PING_TRIGGER_RIGHT 3
@@ -13,6 +16,15 @@
 #define PIN_SERVO_RIGHT 10
 #define PIN_BUZZER 11
 #define PIN_CDS A0
+
+#define NOTE_C4 262
+#define NOTE_D4 294
+#define NOTE_E4 330
+#define NOTE_F4 349
+#define NOTE_G4 392
+#define NOTE_A4 440
+#define NOTE_B4 494
+#define NOTE_C5 523
 
 bool wakeup_from_sensors;
 unsigned long time_sleeping, next_ping_at, sleep_until, shine_until, next_breathe_at, last_sensor_activity_at, awake_since;
@@ -34,18 +46,17 @@ const int SNORE_DELAY_MS = SNORE_DELAY_SECS * 1000;
 int breathe_dir;
 
 // Imported from https://github.com/raygeeknyc/photovore/blob/master/photovore.ino
-
-#define sensorRPin 3
-#define speakerPin 4
-#define servoLPin PIN_SERVO_LEFT
-#define servoRPin PIN_SERVO_RIGHT
+Servo left_motor;
+Servo right_motor;
 
 // Define these based on your servos and controller, the values to cause your servos
 // to spin in opposite directions at approx the same speed.
-#define CW 30
-#define CW_SLOW 20
-#define CCW 10
-#define CCW_SLOW 5
+#define CW 180
+#define CW_SLOW 103 
+#define CCW 0
+#define CCW_SLOW 85
+#define CW_STOP 90
+#define CCW_STOP 90
 
 #define SERVO_L_FWDSLOW CW_SLOW
 #define SERVO_R_FWDSLOW CCW_SLOW
@@ -56,8 +67,8 @@ int breathe_dir;
 #define SERVO_L_BWD CCW
 #define SERVO_R_BWD CW
 
-#define SERVO_L_STOP 0
-#define SERVO_R_STOP 0
+#define SERVO_L_STOP CCW_STOP
+#define SERVO_R_STOP CW_STOP
 
 #define SENSOR_DELTA_THRESHOLD_PCT 20
 #define SENSOR_DELTA_THRESHOLD 30
@@ -94,6 +105,15 @@ int current_dir, last_dir;
 int sensor_normalization_delta;
 
 void setup() {
+  #ifdef _DEBUG
+  Serial.begin(9600);
+  Serial.println("setup");
+  #endif
+  left_motor.attach(PIN_SERVO_LEFT);
+  right_motor.attach(PIN_SERVO_RIGHT);
+  pinMode(PIN_BUZZER, OUTPUT);
+  pinMode(PIN_LED, OUTPUT);
+  pinMode(PIN_CDS, INPUT);
   weave_phase = 0;
   weave_dir = 1;
   next_breathe_at = 0L;
@@ -102,11 +122,6 @@ void setup() {
   sleep_until = 0L;
   next_ping_at = 0L;
   shine_brightness = 0;
-  pinMode(servoLPin, OUTPUT);
-  pinMode(servoRPin, OUTPUT);
-  pinMode(speakerPin, OUTPUT);
-  analogWrite(servoLPin, SERVO_L_STOP);
-  analogWrite(servoRPin, SERVO_R_STOP);
   sensor_normalization_delta = 0;
 }
 
@@ -133,6 +148,9 @@ int smooth(int array[], int len) {
 }
 
 void readSensors() {  // raygeeknyc@
+  int l = getLightLevel();
+  light_delta = light_level - l;
+  light_level = l;
   // Don't read the ping sensors too often
   if (next_ping_at > millis()) {
 #ifdef _DEBUG
@@ -145,15 +163,12 @@ void readSensors() {  // raygeeknyc@
   } else {
     prev_distance_l = current_distance_l;
     prev_distance_r = current_distance_r;
-    ping_delta_l = current_distance_l - prev_distance_l;
-    ping_delta_r = current_distance_r - prev_distance_r;
     current_distance_l = getLeftPing();
     current_distance_r = getRightPing();
+    ping_delta_l = current_distance_l - prev_distance_l;
+    ping_delta_r = current_distance_r - prev_distance_r;
     next_ping_at = millis() + PING_SAMPLE_DELAY_MS;
   }
-  int l = getLightLevel();
-  light_delta = light_level - l;
-  light_level = l;
   if ((abs(light_delta) > LIGHT_CHANGE_THRESHOLD)
       || (abs(ping_delta_l) > PING_CHANGE_THRESHOLD_CM)
       || (abs(ping_delta_r) > PING_CHANGE_THRESHOLD_CM)) {
@@ -177,24 +192,6 @@ bool isSleeping() {  // raygeeknyc@
 
 void sleep(const unsigned sleep_duration_secs) {
   sleep_until = millis() + (sleep_duration_secs * 1000);
-}
-
-void spin(int direction) {
-  recordDirection(direction);
-  switch (direction) {
-    case DIR_LEFT:
-      analogWrite(servoLPin, SERVO_L_BWD);
-      analogWrite(servoRPin, SERVO_R_FWD);
-      break;
-    case DIR_RIGHT:
-      analogWrite(servoLPin, SERVO_L_FWD);
-      analogWrite(servoRPin, SERVO_R_BWD);
-      break;
-    case DIR_STOP:
-      analogWrite(servoLPin, SERVO_L_STOP);
-      analogWrite(servoRPin, SERVO_R_STOP);
-      break;
-  }
 }
 
 void steerTowards(int bias) {
@@ -231,33 +228,33 @@ void withdraw() {
 
 void slow(int side) {
   if (side == DIR_LEFT) {
-    analogWrite(servoLPin, SERVO_L_FWDSLOW);
+    left_motor.write(SERVO_L_FWDSLOW);
   } else {
-    analogWrite(servoRPin, SERVO_R_FWDSLOW);
+    right_motor.write(SERVO_R_FWDSLOW);
   }
 }
 
 void fwd(int side) {
   if (side == DIR_LEFT) {
-    analogWrite(servoLPin, SERVO_L_FWD);
+    left_motor.write(SERVO_L_FWD);
   } else {
-    analogWrite(servoRPin, SERVO_R_FWD);
+    right_motor.write(SERVO_R_FWD);
   }
 }
 
 void reverse(int side) {
   if (side == DIR_LEFT) {
-    analogWrite(servoLPin, SERVO_L_BWD);
+    left_motor.write(SERVO_L_BWD);
   } else {
-    analogWrite(servoRPin, SERVO_R_BWD);
+    right_motor.write(SERVO_R_BWD);
   }
 }
 
 void stop(int side) {
   if (side == DIR_LEFT) {
-    analogWrite(servoLPin, SERVO_L_STOP);
+    left_motor.write(SERVO_L_STOP);
   } else {
-    analogWrite(servoRPin, SERVO_R_STOP);
+    right_motor.write(SERVO_R_STOP);
   }
 }
 
@@ -324,10 +321,10 @@ void updateLed() {
   Since this function blocks, update the breathing state LED */
 void snore() {  // raygeeknyc@
   for (int i = 0; i < 6; i++) {
-    beep(speakerPin, 125, 75);
+    beep(PIN_BUZZER, 125, 75);
     breathe();
     updateLed();
-    beep(speakerPin, 75, 75);
+    beep(PIN_BUZZER, 75, 75);
     breathe();
     updateLed();
   }
@@ -349,19 +346,27 @@ void beep (unsigned char pin, int frequencyInHertz, long timeInMilliseconds) {
 
 // Emit a fairly rude noise
 void burp() {
-  beep(speakerPin, 125, 50);
-  beep(speakerPin, 250, 75);
+  beep(PIN_BUZZER, 125, 50);
+  beep(PIN_BUZZER, 250, 75);
 }
 
-// Melody (liberated from the toneMelody Arduino example sketch by Tom Igoe).
-int melody[] = { 262, 196, 196, 220, 196, 0, 247, 262 };
-int duration[] = { 250, 125, 125, 250, 250, 250, 250, 250 };
-
 void playTune() {
-  for (int thisNote = 0; thisNote < 8; thisNote++) { // Loop through the notes in the array.
-    beep(PIN_BUZZER, melody[thisNote], duration[thisNote]); // Play melody[thisNote] for duration[thisNote].
-    delay(50); // Short delay between notes.
-  }
+ beep(PIN_BUZZER,NOTE_C4,1000);
+ beep(PIN_BUZZER,NOTE_G4,1000);
+ beep(PIN_BUZZER,NOTE_F4,250);
+ beep(PIN_BUZZER,NOTE_E4,250);
+ beep(PIN_BUZZER,NOTE_D4,250);
+ beep(PIN_BUZZER,NOTE_C5,1000);
+ beep(PIN_BUZZER,NOTE_G4,500);
+ beep(PIN_BUZZER,NOTE_F4,250);
+ beep(PIN_BUZZER,NOTE_E4,250);
+ beep(PIN_BUZZER,NOTE_D4,250);
+ beep(PIN_BUZZER,NOTE_C5,1000);
+ beep(PIN_BUZZER,NOTE_G4,500);
+ beep(PIN_BUZZER,NOTE_F4,250);
+ beep(PIN_BUZZER,NOTE_E4,250);
+ beep(PIN_BUZZER,NOTE_F4,250);
+ beep(PIN_BUZZER,NOTE_D4,2000);
 }
 
 int getLeftPing() {
@@ -399,8 +404,17 @@ bool checkAndSleep() {
   return false;
 }
 void loop() {
-  readSensors();  // raygeeknyc@ : done
-  checkAndSleep();  // raygeeknyc@ : done
+  readSensors();  // raygeeknyc@
+  #ifdef _DEBUG
+  Serial.print("LEFT: ");
+  Serial.print(current_distance_l);
+  Serial.print(", RIGHT: ");
+  Serial.print(current_distance_r);
+  Serial.print(", LIGHT: ");
+  Serial.println(light_level);
+  Serial.flush();
+  #endif
+  checkAndSleep();
   updateLed();  // raygeeknyc@ : done
   if (!isSleeping()) {  // raygeeknyc@ : done
     roam();  // raygeeknyc@ : done
