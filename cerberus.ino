@@ -3,7 +3,8 @@
 #include <Servo.h>
 #include <NewPing.h>
 
-#define MAX_DISTANCE 200
+#define MAX_PING_SENSOR_DISTANCE 60
+
 #define _NODEBUG
 
 // Define which pins each of our sensors and actuators are connected to
@@ -11,7 +12,7 @@
 #define PIN_PING_ECHO_RIGHT 4
 #define PIN_PING_TRIGGER_LEFT 12
 #define PIN_PING_ECHO_LEFT 13
-#define PIN_LED 8
+#define PIN_LED 6
 #define PIN_SERVO_LEFT 9
 #define PIN_SERVO_RIGHT 10
 #define PIN_BUZZER 11
@@ -36,11 +37,16 @@ int weave_bias[] = { -1, 0, 1};
 
 #define PING_SAMPLES 5
 #define PING_SAMPLE_DELAY_MS 50
-#define CLOSE_PROXIMITY_THRESHOLD 7
+#define POST_PING_DELAY_MS 2
+
+#define MIN_TIME_AWAKE_SECS 5
+const int MIN_TIME_AWAKE_MS = MIN_TIME_AWAKE_SECS * 1000;
+
+#define CLOSE_PROXIMITY_THRESHOLD 10
 #define SNORE_DELAY_SECS 15
 const int SNORE_DELAY_MS = SNORE_DELAY_SECS * 1000;
-#define BREATHE_MIN 30
-#define BREATHE_MAX 150
+#define BREATHE_MIN 0
+#define BREATHE_MAX 110
 #define BREATHE_STEP 10
 #define BREATHE_STEP_DUR_MS 50
 int breathe_dir;
@@ -79,8 +85,7 @@ Servo right_motor;
 
 #define MAX_SENSOR_READING 1023  // Used to seed sensor pair normalization
 #define LIGHT_CHANGE_THRESHOLD 200
-#define PING_CHANGE_THRESHOLD_CM 3
-
+#define PING_CHANGE_THRESHOLD_CM 15
 
 // How long to spin while callibrating the sensor pair
 #define CALLIBRATION_DUR_MS 1000
@@ -93,13 +98,14 @@ Servo right_motor;
 #define DIR_FWD 3
 #define LED_FLASH_DURATION_MS 500
 #define WITHDRAW_DUR_MS 700
-#define INACTIVITY_SLEEP_SECS 15
-const int INACTIVITY_SLEEP_MS = INACTIVITY_SLEEP_SECS * 1000;
+#define INACTIVITY_TIME_TO_NAP_SECS 15
+const int INACTIVITY_TIME_TO_NAP_MS = INACTIVITY_TIME_TO_NAP_SECS * 1000;
 #define ACTIVITY_TIME_TO_NAP_SECS 60
 const int ACTIVITY_TIME_TO_NAP_MS =  ACTIVITY_TIME_TO_NAP_SECS * 1000;
+#define SLEEP_DURATION_SECS 15
 
-NewPing sonarL(PIN_PING_TRIGGER_LEFT, PIN_PING_ECHO_LEFT, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
-NewPing sonarR(PIN_PING_TRIGGER_RIGHT, PIN_PING_ECHO_RIGHT, MAX_DISTANCE); // NewPing setup of pins and maximum distance.
+NewPing sonarL(PIN_PING_TRIGGER_LEFT, PIN_PING_ECHO_LEFT, MAX_PING_SENSOR_DISTANCE); // NewPing setup of pins and maximum distance.
+NewPing sonarR(PIN_PING_TRIGGER_RIGHT, PIN_PING_ECHO_RIGHT, MAX_PING_SENSOR_DISTANCE); // NewPing setup of pins and maximum distance.
 
 int current_dir, last_dir;
 int sensor_normalization_delta;
@@ -123,6 +129,7 @@ void setup() {
   next_ping_at = 0L;
   shine_brightness = 0;
   sensor_normalization_delta = 0;
+  playTune();
 }
 
 void recordDirection(int dir) {
@@ -148,6 +155,7 @@ int smooth(int array[], int len) {
 }
 
 void readSensors() {  // raygeeknyc@
+  wakeup_from_sensors = false;
   int l = getLightLevel();
   light_delta = light_level - l;
   light_level = l;
@@ -157,22 +165,27 @@ void readSensors() {  // raygeeknyc@
     Serial.print("Reuse old  distances. ");
     Serial.print("right: ");
     Serial.print(current_distance_r);
-    Serial.print("left: ");
+    Serial.print(",left: ");
     Serial.println(current_distance_l);
 #endif
   } else {
     prev_distance_l = current_distance_l;
     prev_distance_r = current_distance_r;
-    current_distance_l = getLeftPing();
     current_distance_r = getRightPing();
+    delay(POST_PING_DELAY_MS);
+    current_distance_l = getLeftPing();
     ping_delta_l = current_distance_l - prev_distance_l;
     ping_delta_r = current_distance_r - prev_distance_r;
     next_ping_at = millis() + PING_SAMPLE_DELAY_MS;
   }
   if ((abs(light_delta) > LIGHT_CHANGE_THRESHOLD)
-      || (abs(ping_delta_l) > PING_CHANGE_THRESHOLD_CM)
-      || (abs(ping_delta_r) > PING_CHANGE_THRESHOLD_CM)) {
+      || current_distance_l <= CLOSE_PROXIMITY_THRESHOLD
+      || current_distance_r <= CLOSE_PROXIMITY_THRESHOLD) {
     last_sensor_activity_at = millis();
+    wakeup_from_sensors = true;
+    #ifdef _DEBUG
+    Serial.println("sensor input");
+    #endif
   }
 }
 
@@ -187,11 +200,24 @@ int getLightLevel() {
 
 /* Return true if we are currently sleeping, false if we're awake */
 bool isSleeping() {  // raygeeknyc@
-  return (sleep_until && sleep_until < millis());
+  bool sleeping = sleep_until > millis();
+  #ifdef _DEBUG
+  Serial.print("sleep until ");
+  Serial.print(sleep_until);
+  Serial.print(" sleeping ");
+  Serial.println(sleeping);
+  #endif
+  return sleeping;
 }
 
 void sleep(const unsigned sleep_duration_secs) {
+  #ifdef _DEBUG
+  Serial.println("Sleep!");
+  #endif
   sleep_until = millis() + (sleep_duration_secs * 1000);
+  stop(DIR_LEFT);
+  stop(DIR_RIGHT);
+  awake_since = 0L;
 }
 
 void steerTowards(int bias) {
@@ -208,6 +234,9 @@ void steerTowards(int bias) {
 }
 
 void weave() {
+  #ifdef _DEBUG
+  Serial.println("weave");
+  #endif
   weave_phase += weave_dir;
   if ((weave_phase == 0) || (weave_phase == (sizeof(weave_bias) / sizeof(int) - 1))) {
     weave_dir *= -1;
@@ -216,7 +245,10 @@ void weave() {
 }
 
 void withdraw() {
-  playTune();
+  #ifdef _DEBUG
+  Serial.println("withdraw");
+  #endif
+  flashLed();
   reverse(DIR_LEFT);
   reverse(DIR_RIGHT);
   delay(WITHDRAW_DUR_MS);
@@ -228,37 +260,65 @@ void withdraw() {
 
 void slow(int side) {
   if (side == DIR_LEFT) {
+    #ifdef _DEBUG
+    Serial.println("slow left");
+    #endif
     left_motor.write(SERVO_L_FWDSLOW);
   } else {
+    #ifdef _DEBUG
+    Serial.println("slow right");
+    #endif
     right_motor.write(SERVO_R_FWDSLOW);
   }
 }
 
 void fwd(int side) {
   if (side == DIR_LEFT) {
+    #ifdef _DEBUG
+    Serial.println("fwd left");
+    #endif
     left_motor.write(SERVO_L_FWD);
   } else {
+    #ifdef _DEBUG
+    Serial.println("fwd right");
+    #endif
     right_motor.write(SERVO_R_FWD);
   }
 }
 
 void reverse(int side) {
   if (side == DIR_LEFT) {
+    #ifdef _DEBUG
+    Serial.println("bwd left");
+    #endif
     left_motor.write(SERVO_L_BWD);
   } else {
+    #ifdef _DEBUG
+    Serial.println("bwd right");
+    #endif
     right_motor.write(SERVO_R_BWD);
   }
 }
 
 void stop(int side) {
   if (side == DIR_LEFT) {
-    left_motor.write(SERVO_L_STOP);
+    #ifdef _DEBUG
+    Serial.println("stop left");
+    #endif
+   left_motor.write(SERVO_L_STOP);
   } else {
+    #ifdef _DEBUG
+    Serial.println("stop right");
+    #endif
     right_motor.write(SERVO_R_STOP);
   }
 }
 
 void turnFrom(const int side) {
+  #ifdef _DEBUG
+  Serial.print("turnFrom ");
+  Serial.println((side == DIR_LEFT)?"left":"right");
+  #endif
   fwd(side);
   reverse((side == DIR_LEFT) ? DIR_RIGHT : DIR_LEFT);
   delay(TURN_DUR_MS);
@@ -272,6 +332,9 @@ bool isClose(const int distance) {
 
 /* Take the current step in moving about */
 void roam() {  // raygeeknyc@
+  #ifdef _DEBUG
+  Serial.println("roam ");
+  #endif
   if (!isClose(current_distance_l) && !isClose(current_distance_r)) {
     weave();
   } else if (isClose(current_distance_l) && isClose(current_distance_r)) {
@@ -284,13 +347,22 @@ void roam() {  // raygeeknyc@
 
 /* Pulse the LED in sleep mode */
 void breathe() {  // raygeeknyc@
-  if (!next_breathe_at || (next_breathe_at >= millis())) {
+  if (!next_breathe_at || (next_breathe_at < millis())) {
+    #ifdef _DEBUG
+    Serial.println("next breathe step");
+    #endif
     next_breathe_at = millis() + BREATHE_STEP_DUR_MS;
-  }
-  if (next_breathe_at < millis()) {
     shine_brightness += BREATHE_STEP * ((breathe_dir > 0) ? 1 : -1);
+    #ifdef _DEBUG
+    Serial.print("breath brightness ");
+    Serial.println(shine_brightness);
+    #endif
     if ((shine_brightness <= BREATHE_MIN) || (shine_brightness >= BREATHE_MAX)) {
       breathe_dir *= -1;
+      #ifdef _DEBUG
+      Serial.print("breath direction now ");
+      Serial.println(breathe_dir);
+      #endif
     }
   }
 }
@@ -305,7 +377,7 @@ void awaken() {  // raygeeknyc@
 }
 
 bool isShining() {
-  return (shine_until && shine_until < millis());
+  return (shine_until && shine_until > millis());
 }
 
 void flashLed() {
@@ -378,10 +450,13 @@ int getRightPing() {
 }
 
 int getPingSensorReading(NewPing sonar) {
-  int cm = 0;
-  while (cm == 0) {
-    int echoTime = sonar.ping_median(PING_SAMPLES);
-    cm = sonar.convert_cm(echoTime);
+  int echoTime = sonar.ping_median(PING_SAMPLES);
+  int cm = sonar.convert_cm(echoTime);
+  if (cm == 0 || cm > MAX_PING_SENSOR_DISTANCE) {
+    #ifdef _DEBUG
+    Serial.println("adjusting distance to max distance");
+    #endif
+    cm = MAX_PING_SENSOR_DISTANCE;
   }
 #ifdef _DEBUG
   Serial.print("Distance ");
@@ -394,15 +469,36 @@ bool hasBeenAwoken() {
   return wakeup_from_sensors;
 }
 
-bool checkAndSleep() {
-  if ((millis() - last_sensor_activity_at) > INACTIVITY_SLEEP_MS) {
+bool checkForSleep() {
+  if (checkForWake()) {
+    awaken();
+    return false;
+  }
+  if (awake_since && (millis() - awake_since) < MIN_TIME_AWAKE_MS) {
+    #ifdef _DEBUG
+    Serial.println("not sleeping due to recent awakening");
+    #endif
+   return false;
+  }
+  if ((millis() - last_sensor_activity_at) > INACTIVITY_TIME_TO_NAP_MS) {
+    #ifdef _DEBUG
+    Serial.println("Nap due to lack of sensory input");
+    #endif
     return true;
   }
   if ((millis() - awake_since) > ACTIVITY_TIME_TO_NAP_MS) {
+    #ifdef _DEBUG
+    Serial.println("Nap due to long activity");
+    #endif
     return true;
   }
   return false;
 }
+
+bool checkForWake() {
+  return sleep_until && sleep_until < millis();
+}
+
 void loop() {
   readSensors();  // raygeeknyc@
   #ifdef _DEBUG
@@ -414,14 +510,23 @@ void loop() {
   Serial.println(light_level);
   Serial.flush();
   #endif
-  checkAndSleep();
   updateLed();  // raygeeknyc@ : done
   if (!isSleeping()) {  // raygeeknyc@ : done
-    roam();  // raygeeknyc@ : done
+    if (!isShining()) {
+      shine_brightness = 0;
+    }
+    if (checkForSleep()) {
+       sleep(SLEEP_DURATION_SECS);
+    } else {
+      roam();  // raygeeknyc@ : done
+    }
   }
   if (isSleeping()) {  // raygeeknyc@ : done
+    #ifdef _DEBUG
+    Serial.println("sleeping");
+    #endif
     breathe();  // raygeeknyc@ : done
-    if (hasBeenAwoken()) {  // raygeeknyc@
+    if (checkForWake() || hasBeenAwoken()) {  // raygeeknyc@
       awaken();  // raygeeknyc@ : done
     } else {
       if (time_sleeping > SNORE_DELAY_MS) {
