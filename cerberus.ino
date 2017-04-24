@@ -28,11 +28,13 @@
 #define NOTE_C5 523
 
 bool wakeup_from_sensors;
-unsigned long time_sleeping, next_ping_at, sleep_until, shine_until, next_breathe_at, last_sensor_activity_at, awake_since;
+unsigned long time_sleeping, next_ping_at, sleep_until, shine_until, next_breathe_at, last_sensor_activity_at, awake_since, weave_phase_at;
+
 int current_distance_l, current_distance_r, shine_brightness, light_level, light_delta,
     prev_distance_l, prev_distance_r, ping_delta_l, ping_delta_r;
 int weave_phase, weave_dir;
 int weave_bias[] = { -1, 0, 1};
+int weave_phase_duration_ms[] = {300, 800, 300};
 #define TURN_DUR_MS 400
 
 #define PING_SAMPLES 5
@@ -57,10 +59,12 @@ Servo right_motor;
 
 // Define these based on your servos and controller, the values to cause your servos
 // to spin in opposite directions at approx the same speed.
-#define CW 180
-#define CW_SLOW 103 
 #define CCW 0
-#define CCW_SLOW 85
+#define CW 180
+
+#define CW_SLOW 90 
+#define CCW_SLOW 90
+
 #define CW_STOP 90
 #define CCW_STOP 90
 
@@ -130,6 +134,8 @@ void setup() {
   shine_brightness = 0;
   sensor_normalization_delta = 0;
   playTune();
+  current_distance_l = 100;
+  current_distance_r = 100;
 }
 
 void recordDirection(int dir) {
@@ -221,15 +227,19 @@ void sleep(const unsigned sleep_duration_secs) {
 }
 
 void steerTowards(int bias) {
+  #ifdef _DEBUG
+  Serial.print("steertowards ");
+  Serial.println(bias);
+  #endif
   if (bias == -1) {
     fwd(DIR_RIGHT);
     slow(DIR_LEFT);
   } else if (bias == 1) {
+    slow(DIR_RIGHT);
     fwd(DIR_LEFT);
-    slow(DIR_RIGHT);
   } else {
-    slow(DIR_LEFT);
-    slow(DIR_RIGHT);
+    fwd(DIR_LEFT);
+    fwd(DIR_RIGHT);
   }
 }
 
@@ -237,11 +247,17 @@ void weave() {
   #ifdef _DEBUG
   Serial.println("weave");
   #endif
-  weave_phase += weave_dir;
-  if ((weave_phase == 0) || (weave_phase == (sizeof(weave_bias) / sizeof(int) - 1))) {
-    weave_dir *= -1;
+  if (weave_phase_at < millis()) {
+    #ifdef _DEBUG
+    Serial.println("weave phase change");
+    #endif
+    weave_phase += weave_dir;
+    if ((weave_phase == 0) || (weave_phase == (sizeof(weave_bias) / sizeof(int) - 1))) {
+      weave_dir *= -1;
+    }
+    weave_phase_at = millis() + weave_phase_duration_ms[weave_phase];
+    steerTowards(weave_bias[weave_phase]);
   }
-  steerTowards(weave_bias[weave_phase]);
 }
 
 void withdraw() {
@@ -500,6 +516,8 @@ bool checkForWake() {
 }
 
 void loop() {
+  roam();
+  return;
   readSensors();  // raygeeknyc@
   #ifdef _DEBUG
   Serial.print("LEFT: ");
