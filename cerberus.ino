@@ -5,8 +5,9 @@
 
 #define MAX_PING_SENSOR_DISTANCE 60
 
-#define _NODEBUG
-
+// define _DEBUG if you want LOTS of Serial output
+// #define _DEBUG
+ 
 // Define which pins each of our sensors and actuators are connected to
 #define PIN_PING_TRIGGER_RIGHT 3
 #define PIN_PING_ECHO_RIGHT 4
@@ -34,7 +35,7 @@ int current_distance_l, current_distance_r, shine_brightness, light_level, light
     prev_distance_l, prev_distance_r, ping_delta_l, ping_delta_r;
 int weave_phase, weave_dir;
 int weave_bias[] = { -1, 0, 1};
-int weave_phase_duration_ms[] = {300, 800, 300};
+int weave_phase_duration_ms[] = {500, 1000, 500};
 #define TURN_DUR_MS 400
 
 #define PING_SAMPLES 5
@@ -62,11 +63,11 @@ Servo right_motor;
 #define CCW 0
 #define CW 180
 
-#define CW_SLOW 90 
-#define CCW_SLOW 90
+#define CW_SLOW 65 
+#define CCW_SLOW 45
 
-#define CW_STOP 90
-#define CCW_STOP 90
+#define CW_STOP 55
+#define CCW_STOP 55
 
 #define SERVO_L_FWDSLOW CW_SLOW
 #define SERVO_R_FWDSLOW CCW_SLOW
@@ -104,7 +105,7 @@ Servo right_motor;
 #define WITHDRAW_DUR_MS 700
 #define INACTIVITY_TIME_TO_NAP_SECS 15
 const int INACTIVITY_TIME_TO_NAP_MS = INACTIVITY_TIME_TO_NAP_SECS * 1000;
-#define ACTIVITY_TIME_TO_NAP_SECS 60
+#define ACTIVITY_TIME_TO_NAP_SECS 30
 const int ACTIVITY_TIME_TO_NAP_MS =  ACTIVITY_TIME_TO_NAP_SECS * 1000;
 #define SLEEP_DURATION_SECS 15
 
@@ -119,11 +120,13 @@ void setup() {
   Serial.begin(9600);
   Serial.println("setup");
   #endif
-  left_motor.attach(PIN_SERVO_LEFT);
-  right_motor.attach(PIN_SERVO_RIGHT);
   pinMode(PIN_BUZZER, OUTPUT);
   pinMode(PIN_LED, OUTPUT);
   pinMode(PIN_CDS, INPUT);
+  left_motor.attach(PIN_SERVO_LEFT);
+  right_motor.attach(PIN_SERVO_RIGHT);
+  stop(DIR_LEFT);
+  stop(DIR_RIGHT);
   weave_phase = 0;
   weave_dir = 1;
   next_breathe_at = 0L;
@@ -134,6 +137,7 @@ void setup() {
   shine_brightness = 0;
   sensor_normalization_delta = 0;
   playTune();
+  digitalWrite(PIN_BUZZER, LOW);
   current_distance_l = 100;
   current_distance_r = 100;
 }
@@ -167,13 +171,13 @@ void readSensors() {  // raygeeknyc@
   light_level = l;
   // Don't read the ping sensors too often
   if (next_ping_at > millis()) {
-#ifdef _DEBUG
+    #ifdef _DEBUG
     Serial.print("Reuse old  distances. ");
     Serial.print("right: ");
     Serial.print(current_distance_r);
     Serial.print(",left: ");
     Serial.println(current_distance_l);
-#endif
+    #endif
   } else {
     prev_distance_l = current_distance_l;
     prev_distance_r = current_distance_r;
@@ -265,6 +269,7 @@ void withdraw() {
   Serial.println("withdraw");
   #endif
   flashLed();
+  alarm();
   reverse(DIR_LEFT);
   reverse(DIR_RIGHT);
   delay(WITHDRAW_DUR_MS);
@@ -419,7 +424,7 @@ void snore() {  // raygeeknyc@
 }
 
 // The sound producing function for chips without tone() support
-void beep (unsigned char pin, int frequencyInHertz, long timeInMilliseconds) {
+void beep(unsigned char pin, int frequencyInHertz, long timeInMilliseconds) {
   // from http://web.media.mit.edu/~leah/LilyPad/07_sound_code.html
   int x;
   long delayAmount = (long)(1000000 / frequencyInHertz);
@@ -432,10 +437,16 @@ void beep (unsigned char pin, int frequencyInHertz, long timeInMilliseconds) {
   }
 }
 
+// Emit a fairly shrill noise
+void alarm() {
+  beep(PIN_BUZZER, 300, 300);
+}
+
 // Emit a fairly rude noise
 void burp() {
+  beep(PIN_BUZZER, 75, 80);
   beep(PIN_BUZZER, 125, 50);
-  beep(PIN_BUZZER, 250, 75);
+  beep(PIN_BUZZER, 75, 80);
 }
 
 void playTune() {
@@ -516,8 +527,6 @@ bool checkForWake() {
 }
 
 void loop() {
-  roam();
-  return;
   readSensors();  // raygeeknyc@
   #ifdef _DEBUG
   Serial.print("LEFT: ");
