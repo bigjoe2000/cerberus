@@ -140,24 +140,24 @@ void setup() {
   digitalWrite(PIN_BUZZER, LOW);
   current_distance_l = 100;
   current_distance_r = 100;
-  analogWrite(LED_PIN, 10);
+  analogWrite(PIN_LED, 10);
   stop(DIR_LEFT);
   stop(DIR_RIGHT);
   // debugging motors
   delay(3000);
-  analogWrite(LED_PIN, 30);
+  analogWrite(PIN_LED, 30);
   slow(DIR_LEFT);
   slow(DIR_RIGHT);
   delay(3000);
-  analogWrite(LED_PIN, 150);
+  analogWrite(PIN_LED, 150);
   fwd(DIR_LEFT);
   fwd(DIR_RIGHT);
   delay(3000);
-  analogWrite(LED_PIN, 10);
-  bwd(DIR_LEFT);
-  bwd(DIR_RIGHT);
+  analogWrite(PIN_LED, 10);
+  reverse(DIR_LEFT);
+  reverse(DIR_RIGHT);
   delay(3000);
-  analogWrite(LED_PIN, 0);
+  analogWrite(PIN_LED, 0);
   // debugging motors /
 }
 
