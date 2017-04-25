@@ -140,6 +140,25 @@ void setup() {
   digitalWrite(PIN_BUZZER, LOW);
   current_distance_l = 100;
   current_distance_r = 100;
+  analogWrite(LED_PIN, 10);
+  stop(DIR_LEFT);
+  stop(DIR_RIGHT);
+  // debugging motors
+  delay(3000);
+  analogWrite(LED_PIN, 30);
+  slow(DIR_LEFT);
+  slow(DIR_RIGHT);
+  delay(3000);
+  analogWrite(LED_PIN, 150);
+  fwd(DIR_LEFT);
+  fwd(DIR_RIGHT);
+  delay(3000);
+  analogWrite(LED_PIN, 10);
+  bwd(DIR_LEFT);
+  bwd(DIR_RIGHT);
+  delay(3000);
+  analogWrite(LED_PIN, 0);
+  // debugging motors /
 }
 
 void recordDirection(int dir) {
