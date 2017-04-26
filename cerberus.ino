@@ -46,8 +46,8 @@ int weave_phase_duration_ms[] = {500, 1000, 500};
 const int MIN_TIME_AWAKE_MS = MIN_TIME_AWAKE_SECS * 1000;
 
 #define CLOSE_PROXIMITY_THRESHOLD 10
-#define SNORE_DELAY_SECS 15
-const int SNORE_DELAY_MS = SNORE_DELAY_SECS * 1000;
+#define SNORE_DURATION_SECS 3
+const int SNORE_DURATION_MS = SNORE_DURATION_SECS * 1000;
 #define BREATHE_MIN 0
 #define BREATHE_MAX 110
 #define BREATHE_STEP 10
@@ -208,6 +208,18 @@ int getLightLevel() {
     samples[sample] = analogRead(PIN_CDS);
   }
   return smooth(samples, SENSOR_SAMPLES);
+}
+
+bool timeToSnore() {
+  int waking_in = sleep_until - millis();
+  bool snoring = waking_in < SNORE_DURATION_MS;
+  #ifdef _DEBUG
+  Serial.print("Waking in ");
+  Serial.println(waking_in);
+  Serial.print(" snoring ");
+  Serial.println(snoring);
+  #endif
+  return snoring;
 }
 
 /* Return true if we are currently sleeping, false if we're awake */
@@ -420,14 +432,12 @@ void updateLed() {
 /* Make a sleeping sound in sleep mode.
   Since this function blocks, update the breathing state LED */
 void snore() {  // raygeeknyc@
-  for (int i = 0; i < 6; i++) {
     beep(PIN_BUZZER, 125, 75);
     breathe();
     updateLed();
     beep(PIN_BUZZER, 75, 75);
     breathe();
     updateLed();
-  }
 }
 
 // The sound producing function for chips without tone() support
@@ -563,7 +573,7 @@ void loop() {
     if (checkForWake() || hasBeenAwoken()) {  // raygeeknyc@
       awaken();  // raygeeknyc@ : done
     } else {
-      if (time_sleeping > SNORE_DELAY_MS) {
+      if (timeToSnore()) {
         snore();  // raygeeknyc@ : done
       }
     }
