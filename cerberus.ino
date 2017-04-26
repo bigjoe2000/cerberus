@@ -63,11 +63,11 @@ Servo right_motor;
 #define CCW 0
 #define CW 180
 
-#define CCW_SLOW 45
-#define CW_SLOW 65 
+#define CCW_SLOW 80
+#define CW_SLOW 100 
 
-#define CW_STOP 55
-#define CCW_STOP 55
+#define CW_STOP 90
+#define CCW_STOP 90
 
 #define SERVO_L_FWDSLOW CW_SLOW
 #define SERVO_R_FWDSLOW CCW_SLOW
