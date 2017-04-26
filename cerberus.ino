@@ -60,8 +60,8 @@ Servo right_motor;
 
 // Define these based on your servos and controller, the values to cause your servos
 // to spin in opposite directions at approx the same speed.
-#define CCW 0
-#define CW 180
+#define CCW 30
+#define CW 150
 
 #define CCW_SLOW 80
 #define CW_SLOW 100 
