@@ -102,6 +102,7 @@ Servo right_motor;
 #define DIR_LEFT 2
 #define DIR_FWD 3
 #define LED_FLASH_DURATION_MS 500
+#define LED_SHINE_DURATION_MS 1500
 #define WITHDRAW_DUR_MS 700
 #define INACTIVITY_TIME_TO_NAP_SECS 15
 const int INACTIVITY_TIME_TO_NAP_MS = INACTIVITY_TIME_TO_NAP_SECS * 1000;
@@ -141,8 +142,6 @@ void setup() {
   current_distance_l = 100;
   current_distance_r = 100;
   analogWrite(PIN_LED, 10);
-  stop(DIR_LEFT);
-  stop(DIR_RIGHT);
 }
 
 void recordDirection(int dir) {
@@ -365,6 +364,7 @@ void roam() {  // raygeeknyc@
     withdraw();
   } else {
     int closer_side = (current_distance_l  < current_distance_r) ? DIR_LEFT : DIR_RIGHT;
+    dimLed();
     turnFrom(closer_side);
   }
 }
@@ -407,6 +407,10 @@ bool isShining() {
 void flashLed() {
   shine_brightness = 255;
   shine_until = millis() + LED_FLASH_DURATION_MS;
+}
+void dimLed() {
+  shine_brightness = 10;
+  shine_until = millis() + LED_SHINE_DURATION_MS;
 }
 
 void updateLed() {
