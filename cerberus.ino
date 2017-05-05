@@ -5,6 +5,7 @@
 
 #define MAX_PING_SENSOR_DISTANCE 60
 
+//#define _TRINKET
 // define _DEBUG if you want LOTS of Serial output
 // #define _DEBUG
  
@@ -440,8 +441,13 @@ void snore() {  // raygeeknyc@
     updateLed();
 }
 
-// The sound producing function for chips without tone() support
 void beep(unsigned char pin, int frequencyInHertz, long timeInMilliseconds) {
+  NoToneBeep(pin, frequencyInHertz, timeInMilliseconds);
+}
+
+// The sound producing function for chips without tone() support
+void NoToneBeep(unsigned char pin, int frequencyInHertz, long timeInMilliseconds) {
+  
   // from http://web.media.mit.edu/~leah/LilyPad/07_sound_code.html
   int x;
   long delayAmount = (long)(1000000 / frequencyInHertz);
